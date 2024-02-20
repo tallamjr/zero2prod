@@ -10,3 +10,7 @@ cargo clippy -- -D warnings
 cargo fmt -- --check
 cargo install cargo-audit
 ```
+
+mold/sold linker. Worth checking out.
+
+https://github.com/rui314/mold
