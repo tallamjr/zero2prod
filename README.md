@@ -1,4 +1,6 @@
 
+[![codecov](https://codecov.io/gh/tallamjr/zero2prod/graph/badge.svg?token=rPdbh2HJco)](https://codecov.io/gh/tallamjr/zero2prod)
+
 Install/update rustup:
 
 ```bash
