@@ -58,6 +58,35 @@ has now changed to be just `ld` and the _old_ version being called `ld-classic`.
 - [`zld` is now archived, consider using lld instead](https://github.com/michaeleisel/zld#note-zld-is-now-archived-consider-using-lld-instead-more-info-is-here)
 - [Michael Eisel's Blog aka Mr `zld`](https://eisel.me/lld)
 
+See `.cargo/config.toml`:
+
+```toml
+# On Windows
+# cargo install -f cargo-binutils
+# rustup component add llvm-tools-preview
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# On Linux:
+# - Ubuntu, sudo apt-get install lld clang
+# - Arch, sudo pacman -S lld clang
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "linker=clang", "-C", "link-arg=-fuse-ld=lld"]
+
+# On MacOS, brew install llvm and follow steps in brew info llvm
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.aarch64-apple-darwin]
+# rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld"]
+
+# If xcodebuild --version > 15; then use the following
+rustflags = ["-C", "link-arg=-fuse-ld=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld"]
+```
+
 _Anyways_ ..
 
 1. Toolchain, installed. ✅
@@ -93,6 +122,51 @@ Hello World!
 `cargo expand` for expanding procedural macros, typicall requires `+nightly`
 toolchain: can then run via `cargo +nightly expand` (and is installed via `cargo
 install cargo-expand`)
+
+```rust
+warning: unused variable: `req`
+ --> src/main.rs:8:23
+  |
+8 | async fn health_check(req: HttpRequest) -> impl Responder {
+  |                       ^^^ help: if this is intentional, prefix it with an underscore: `_req`
+  |
+  = note: `#[warn(unused_variables)]` on by default
+
+warning: `zero2prod` (bin "zero2prod") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.37s
+
+```
+
+```toml
+[lib]
+# We could use any path here, but we are following the community convention # We could specify a library name using the `name` field. If unspecified,
+# cargo will default to `package.name`, which is what we want.
+path = "src/lib.rs"
+
+# Notice the double square brackets: it's an array in TOML's syntax.
+# We can only have one library in a project, but we can have multiple binaries!
+# If you want to manage multiple libraries in the same repository
+# have a look at the workspace feature - we'll cover it later on.
+[[bin]]
+path = "src/main.rs"
+name = "zero2prod"
+
+```
+
+```rust
+// We need to mark `run` as public.
+// It is no longer a binary entrypoint, therefore we can mark it as async
+// without having to use any proc-macro incantation.
+pub async fn run() -> Result<(), std::io::Error> {
+    HttpServer::new(|| App::new().route("/health_check", web::get().to(health_check)))
+        .bind("127.0.0.1:8000")?
+        .run()
+        .await
+}
+```
+
+> `tokio::test` is the testing equivalent of `tokio::main`.
+> It also spares you from having to specify the `#[test]` attribute.
 
 ## Chapter 4: Telemetry
 
