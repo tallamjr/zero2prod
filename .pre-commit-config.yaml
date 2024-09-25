@@ -1,0 +1,51 @@
+repos:
+  # Standard pre-commit hooks for general code quality
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0 # Use the latest stable version
+    hooks:
+      - id: trailing-whitespace
+        name: Remove Trailing Whitespace
+        description: "Removes trailing whitespace from all files."
+        files: \.(rs|toml|yaml|yml|md)$ # Apply to specific file types
+
+      - id: end-of-file-fixer
+        name: Ensure End of File
+        description: "Ensures that files end with a newline."
+        files: \.(rs|toml|yaml|yml|md)$
+
+      - id: check-yaml
+        name: YAML Lint
+        description: "Validates YAML files for syntax errors."
+        files: \.(yaml|yml)$
+
+      - id: check-added-large-files
+        name: Prevent Large Files
+        description: "Prevents accidentally committing large files."
+        args: ["--maxkb=500"] # Set maximum file size to 500KB
+
+  # Local hooks for Rust-specific tools
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: Rustfmt
+        description: "Automatically formats Rust code using rustfmt."
+        entry: rustfmt
+        language: system
+        types: [rust]
+        pass_filenames: true
+
+      - id: clippy
+        name: Clippy
+        description: "Lints Rust code using Clippy for best practices."
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-audit
+        name: Cargo Audit
+        description: "Audits Cargo dependencies for security vulnerabilities."
+        entry: cargo audit
+        language: system
+        types: [rust]
+        pass_filenames: false
