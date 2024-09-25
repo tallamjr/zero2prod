@@ -177,6 +177,15 @@ will then be bound to the application
 
 ```
 
+#### Refocus
+
+1. How to read data collected in a HTML form in actix-web (i.e. how do I parse the request body of a POST?);
+2. What libraries are available to work with a PostgreSQL database in Rust (diesel vs sqlx vs tokio­postgres);
+3. How to setup and manage migrations for our database;
+4. How to get our hands on a database connection in our API request handlers;
+5. How to test for side-effects (a.k.a. stored data) in our integration tests;
+6. How to avoid weird interactions between tests when working with a database.
+
 ## Chapter 4: Telemetry
 
 ## Chapter 5: Going Live

@@ -5,9 +5,26 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[dependencies] 
+# We need the optional `derive` feature to use `serde`'s procedural macros: 
+# `#[derive(Serialize)]` and `#[derive(Deserialize)]`. 
+# The feature is not enabled by default to avoid pulling in 
+# unnecessary dependencies for projects that do not need it. 
+serde = { version = "1", features = ["derive"]}
 actix-web = "4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Using table-like toml syntax to avoid a super-long line! 
+[dependencies.sqlx] 
+version = "0.8" 
+default-features = false 
+features = [ 
+"runtime-tokio-rustls", 
+"macros", 
+"postgres", 
+"uuid", 
+"chrono", 
+"migrate
 
 [lib] 
 # We could use any path here, but we are following the community convention # We could specify a library name using the `name` field. If unspecified,
