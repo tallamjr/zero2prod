@@ -186,6 +186,53 @@ will then be bound to the application
 5. How to test for side-effects (a.k.a. stored data) in our integration tests;
 6. How to avoid weird interactions between tests when working with a database.
 
+#### Summary
+
+We covered a large number of topics in this chapter:
+
+- actix-web extractors and HTML forms
+- (de)serialisation with `serde`
+- overview of the available database crates in the Rust ecosystem:
+- fundamentals of `sqlx`
+
+```console
+$ brew install postgresql
+
+$ cargo install --version="~0.8" sqlx-cli --no-default-features --features rustls,postgres
+
+$ sqlx --help
+Command-line utility for SQLx, the Rust SQL toolkit.
+
+Usage: sqlx <COMMAND>
+
+Commands:
+  database  Group of commands for creating and dropping your database
+  prepare   Generate query metadata to support offline compile-time verification
+  migrate   Group of commands for creating and running migrations
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+$ sqlx database -h
+Group of commands for creating and dropping your database
+
+Usage: sqlx database <COMMAND>
+
+Commands:
+  create  Creates the database specified in your DATABASE_URL
+  drop    Drops the database specified in your DATABASE_URL
+  reset   Drops the database specified in your DATABASE_URL, re-creates it, and runs any pending migrations
+  setup   Creates the database specified in your DATABASE_URL and runs any pending migrations
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+16:28:06 ✔ ~/github/tallamjr/origin/zero2prod (master) :: sqlx database create
+
+```
+
 ## Chapter 4: Telemetry
 
 ## Chapter 5: Going Live
