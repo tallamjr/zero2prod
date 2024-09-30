@@ -229,11 +229,79 @@ Commands:
 
 Options:
   -h, --help  Print help
-16:28:06 ✔ ~/github/tallamjr/origin/zero2prod (master) :: sqlx database create
+
+$ sqlx database create
 
 ```
 
+##### 🔑 Key Section
+
+3.10.1 Test Isolation
+
+Your database is a gigantic global variable: all your tests are interacting with
+it and whatever they leave behind will be available to other tests in the suite
+as well as to the following test runs. This is precisely what happened to us a
+moment ago: our first test run commanded our application to register a new
+subscriber with `ursula_le_guin@gmail.com` as their email; the application
+obliged. When we re-ran our test suite we tried again to perform another
+`INSERT` using the same email, but our `UNIQUE` constraint on the email column
+raised a unique `key violation` and rejected the query,forcing the application
+to return us a `500 INTERNAL_SERVER_ERROR`.
+
+You really do not want to have _any_ kind of interaction
+between your tests: it makes your test runs nondeterministic and it leads down
+the line to spurious test failures that are extremely tricky to hunt down and
+fix.
+
+There are two techniques I am aware of to ensure test isolation when
+interacting with a relational database in a test:
+
+1. wrap the whole test in a SQL transaction and rollback at the end of it
+2. spin up a brand-new logical database for each integration test.
+
+The first is clever and will generally be faster: rolling back a SQL transaction
+takes less time than spinning up a new logical database. It works quite well
+when writing unit tests for your queries but it is tricky to pull off in an
+integration test like ours: our application will borrow a PgConnection from a
+PgPool and we have no way to “capture” that connection in a SQL transaction
+context. Which leads us to the second option: potentially slower, yet much
+easier to implement.
+
+How? Before each test run, we want to:
+
+1. create a new logical database with a unique name;
+2. run database migrations on it.
+
+The best place to do this is spawn_app, before launching our actix-web test
+application (see. `tests/health_check.rs`)
+
+`configuration.database.connection_string()` uses the database_name specified in
+our configura­tion.yaml file - the same for all tests. Let’s randomise it with
+`uuid`.
+
+`cargo test` will fail: there is no database ready to accept connections using
+the name we generated. We need to create it! In order to issue a `CREATE
+DATABASE` command we need to connect to the Postgres instance, which implies
+connecting to a database that already exists. We’ll use the postgres database
+for this purpose, the one that comes by default with a Postgres installation.
+It’s often referred to as the “maintenance database” for this reason
+
+`sqlx::migrate!` is the same macro used by `sqlx-cli` when executing `sqlx
+migrate run` - no need to throw bash scripts into the mix to achieve the same
+result
+
+You might have noticed that we do not perform any clean-up step at the end of
+our tests - the logical databases we create are not being deleted. This is
+intentional: we could add a clean-up step, but our Postgres instance is used
+only for test purposes and it’s easy enough to restart it if, after hundreds of
+test runs, performance starts to suffer due to the number of lingering (almost
+empty) databases.
+
 ## Chapter 4: Telemetry
+
+> **Observability** is about being able to ask arbitrary questions about your
+> environment without — and this is the key part — having to know ahead of time
+> what you wanted to ask.
 
 ## Chapter 5: Going Live
 
