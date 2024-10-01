@@ -303,7 +303,212 @@ empty) databases.
 > environment without — and this is the key part — having to know ahead of time
 > what you wanted to ask.
 
+- `tracing`:
+
+> tracing expands upon logging-style diagnostics by allowing libraries and
+> applications to record structured events with additional information about
+> temporality and causality — unlike a log message, a span in tracing has a
+> beginning and end time, may be entered and exited by the flow of execu- tion,
+> and may exist within a nested tree of similar spans.
+
+##### Key Topics
+
+1. Facade Pattern
+2. Structured Logging
+
+_Lifetime of the span_
+
+• We enter the span(->);
+• We execute the INSERT query;
+• We exit the span (<-);
+• We finally close the span (--).
+
+**Removing Unused Dependencies**: `cargo install cargo-udeps`, `cargo +nightly
+udeps`
+
+**Protect Your Secrets**: `secrecy`
+
+```toml
+# [...]
+[dependencies]
+secrecy = { version = "0.8", features = ["serde"] }
+# [...]
+```
+
 ## Chapter 5: Going Live
+
+> “Get customer feedback early!”
+> “Ship often and iterate on the product!”
+
+**Leveraging CI and Docker**
+
+> A Dockerfile is a recipe for your application environment.
+> They are organised in layers: you start from a base image (usually an OS
+> enriched with a programming language toolchain) and execute a series of commands
+> (COPY, RUN, etc.), one after the other, to build the environment you need.
+
+```bash
+# We use the latest Rust stable release as base image
+FROM rust:1.80.1
+# Let's switch our working directory to `app` (equivalent to `cd app`)
+# The `app` folder will be created for us by Docker in case it does not
+# exist already.
+WORKDIR /app
+# Install the required system dependencies for our linking configuration RUN apt
+update && apt install lld clang -y
+# Copy all files from our working environment to our Docker image
+COPY . .
+# Let's build our binary!
+# We'll use the release profile to make it faaaast
+RUN cargo build --release
+# When `docker run` is executed, launch the binary!
+ENTRYPOINT ["./target/release/zero2prod"]
+```
+
+```console
+# Build a docker image tagged as "zero2prod" according to the recipe
+# specified in `Dockerfile`
+docker build --tag zero2prod .
+```
+
+_Use the offline mode for `sqlx`._
+
+```console
+# We use `--all-targets` to include the queries
+# defined in our integration tests
+cargo sqlx prepare --workspace -- --all-targets
+
+query data written to `.sqlx` in the workspace root;
+please check this into version control
+```
+
+```bash
+...
+ENV SQLX_OFFLINE true
+...
+```
+
+**Optimising Our Docker Image**
+
+There are two optimisations we can make to our Dockerfile to make our life
+easier going forward:
+
+- Smaller image size for faster usage;
+- Docker layer caching for faster builds.
+
+We can use the bare operating system as base image (`debian:bookworm-slim`) for
+our runtime stage:
+
+```bash
+
+# [...]
+
+# Runtime stage
+
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+# Install OpenSSL - it is dynamically linked by some of our dependencies
+# Install ca-certificates - it is needed to verify TLS certificates
+# when establishing HTTPS connections
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  # Clean up
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/\*
+COPY --from=builder /app/target/release/zero2prod zero2prod
+COPY configuration configuration
+ENV APP_ENVIRONMENT production
+ENTRYPOINT ["./zero2prod"]
+```
+
+We could go even smaller by using rust:1.80.1-alpine, but we would have to
+cross-compile to the linux-musl target - out of scope for now. Check out
+[rust-musl-builder](https://github.com/clux/muslrust) if you are interested in
+generating tiny Docker images. Another option to reduce the size of our binary
+further is stripping symbols from it - you can find more information about it
+[here](https://doc.rust-lang.org/cargo/reference/profiles.html#strip)
+
+> rustc statically links all Rust code but dynamically links libc from the
+> underlying system if you are using the Rust standard library. You can get a
+> fully statically linked binary by targeting linux-musl; check out Rust’s
+> supported platforms and targets for more information.
+
+Rust’s binaries are statically linked - we do not need to keep the source code
+or intermediate compilation artefacts around to run the binary, it is entirely
+self-contained.
+
+This plays nicely with multi-stage builds, a useful Docker feature. We can split
+our build in two stages:
+
+- A builder stage, to generate a compiled binary;
+- A runtime stage, to run the binary.
+
+You can think of each stage as its own Docker image with its own caching - they
+only interact with each other when using the `COPY --from` statement.
+
+```bash
+
+#! spec.yaml
+name: zero2prod
+# Check https://www.digitalocean.com/docs/app-platform/#regional-availability # for a list of all the available options.
+# You can get region slugs from
+# https://www.digitalocean.com/docs/platform/availability-matrix/
+# They must specified lowercased.
+# `fra` stands for Frankfurt (Germany - EU)
+region: fra
+services:
+  - name: zero2prod
+  # Relative to the repository root
+  dockerfile_path: Dockerfile
+  source_dir: .
+  github:
+    # Depending on when you created the repository,
+    # the default branch on GitHub might have been named `master`
+    branch: main
+    # Deploy a new version on every commit to `main`!
+    # Continuous Deployment, here we come!
+    deploy_on_push: true
+    # !!! Fill in with your details
+    # e.g. LukeMathWalker/zero-to-production
+    repo: <YOUR USERNAME>/<YOUR REPOSITORY NAME>
+  # Active probe used by DigitalOcean's to ensure our application is healthy
+  health_check:
+    # The path to our health check endpoint!
+    # It turned out to be useful in the end!
+    http_path: /health_check
+  # The port the application will be listening on for incoming requests
+  # It should match what we specified in our configuration/production.yaml file!
+  http_port: 8000
+  # For production workloads we'd go for at least two!
+  # But let's try to keep the bill under control for now...
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  # All incoming requests should be routed to our app
+  routes:
+    - path: /
+```
+
+```console
+doctl apps create --spec spec.yaml
+
+doctl apps list
+```
+
+Potential OOM error on Digital Ocean: https://github.com/LukeMathWalker/zero-to-production/issues/71
+
+```console
+# You can retrieve your app id using `doctl apps list`
+doctl apps update YOUR-APP-ID --spec=spec.yaml
+```
+
+```console
+curl --request POST \
+    --data 'name=le%20guin&email=ursula_le_guin%40gmail.com' \
+    https://zero2prod-adqrw.ondigitalocean.app/subscriptions \
+    --verbose
+```
 
 ## Chapter 6: Reject Invalid Subscribers \#1
 
