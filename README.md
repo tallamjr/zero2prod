@@ -236,7 +236,7 @@ $ sqlx database create
 
 ##### 🔑 Key Section
 
-3.10.1 Test Isolation
+**3.10.1 Test Isolation**
 
 Your database is a gigantic global variable: all your tests are interacting with
 it and whatever they leave behind will be available to other tests in the suite
@@ -512,16 +512,272 @@ curl --request POST \
 
 ## Chapter 6: Reject Invalid Subscribers \#1
 
+#### 6.5 Ownership Meets Invariants
+
+Given a field in a struct we can choose to:
+
+- Expose it by value, consuming the struct itself
+
+```rust
+impl SubscriberName {
+  pub fn inner(self) -> String {
+    // The caller gets the inner string,
+    // but they do not have a SubscriberName anymore!
+    // That's because `inner` takes `self` by value,
+    // consuming it according to move semantics
+    self.0
+  }
+}
+```
+
+- Expose a mutable reference:
+
+```rust
+impl SubscriberName {
+  pub fn inner_mut(&mut self) -> &mut str {
+    // The caller gets a mutable reference to the inner string.
+    // This allows them to perform *arbitrary* changes to
+    // value itself, potentially breaking our invariants!
+    &mut self.0
+  }
+}
+```
+
+- Expose a shared reference:
+
+```rust
+impl SubscriberName {
+  pub fn inner_ref(&self) -> &str {
+    // The caller gets a shared reference to the inner string.
+    // This gives the caller **read-only** access,
+    // they have no way to compromise our invariants!
+    &self.0
+  }
+}
+```
+
+`inner_mut` is not what we are looking for here - the loss of control on our
+invariants would be equivalent to using `SubscriberName(pub String)`. Both
+`inner` and `inner_ref` would be suitable, but `inner_ref` communicates better
+our intent: give the caller a chance to read the value without the power to
+mutate it.
+
+While our inner_ref method gets the job done, I am obliged to point out that
+Rust’s standard library ex-poses a trait that is designed exactly for this type
+of usage - `AsRef`.
+
+**`AsRef`**:
+
+```rust
+pub trait AsRef<T: ?Sized> {
+  /// Performs the conversion. fn as_ref(&self) -> &T;
+}
+```
+
+...
+
+```rust
+//! src/domain.rs
+// [...]
+impl AsRef<str> for SubscriberName {
+  fn as_ref(&self) -> &str {
+    &self.0
+  }
+}
+```
+
+#### 6.6 Panics
+
+> [...] If your Rust application panics in response to any user input, then the
+> following should be true:
+> your application has a bug, whether it be in a library or in the primary
+> application code.
+
+#### 6.7 `Result`
+
+```rust
+pub enum Result<T, E> {
+  Ok(T),
+  Err(E),
+}
+```
+
+Type conversion
+
+```rust
+pub trait TryFrom<T>: Sized {
+  /// The type returned in the event of a conversion error. type Error;
+  /// Performs the conversion.
+  fn try_from(value: T) -> Result<Self, Self::Error>; }
+
+pub trait TryInto<T> { type Error;
+  fn try_into(self) -> Result<T, Self::Error>; }
+```
+
+<!-- TODO: TODAY -->
+
 ## Chapter 7: Reject Invalid Subscribers \#2
 
+The Implementation Strategy
+
+1. Write a module to send an email;
+2. Adapt the logic of our existing `POST /subscriptions` request handler to match the new specification;
+3. Write a `GET /subscriptions/confirm` request handler from scratch.
+
+`reqwest`
+
+HTTP Mocking With `wiremock`
+
+`wiremock::MockServer` is a full-blown HTTP server.
+
+`MockServer::start` asks the operating system for a random available port and
+spins up the server on a back- ground thread, ready to listen for incoming
+requests.
+
+> What does `.expect(1)` do?
+> It sets an _expectation_ on our mock: we are telling the mock server that during
+> this test it should receive exactly one request that matches the conditions
+> set by this mock.
+>
+> We could also use ranges for our expectations - e.g. `expect(1..)` if we want to
+> see at least one request, `expect(1..=3)` if we expect at least one request but no
+> more than three, etc.
+>
+> Expectations are verified when `MockServer` goes out of scope - at the end of our
+> test function, indeed! Before shutting down, `MockServer` will iterate over all
+> the mounted mocks and check if their expectations have been verified. If the
+> verification step fails, it will trigger a panic (and fail the test).
+
+```console
+$ curl "https://api.postmarkapp.com/email" \
+  -X POST \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "X-Postmark-Server-Token: server token" \
+  -d '{
+  "From": "sender@example.com",
+  "To": "receiver@example.com",
+  "Subject": "Postmark test",
+  "TextBody": "Hello dear Postmark user.",
+  "HtmlBody": "<html><body><strong>Hello</strong> dear Postmark user.</body></html>"
+}'
+
+```
+
+- A `POST` request to the `/email` endpoint;
+- A `JSON` body, with fields that map closely to the arguments of send_email. We
+  need to be careful with field names, they must be pascal cased;
+- An authorization header, `X-Postmark-Server-Token`, with a value set to a secret
+  token that we can retrieve from their portal.
+
+If the request succeeds, we get something like this back:
+
+```console
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+    "To": "receiver@example.com",
+    "SubmittedAt": "2021-01-12T07:25:01.4178645-05:00",
+    "MessageID": "0a129aee-e1cd-480d-b08d-4f48548ff48d",
+    "ErrorCode": 0,
+    "Message": "OK"
+}
+```
+
+`reqwest::Client::post`:
+`reqwest::Client` exposes a post method - it takes the URL we want to call with a
+POST request as argument and it returns a `RequestBuilder`.
+
+**Test code is still code.**
+
+#### A Reminder of the Strategy
+
+**`POST /subscriptions` will:**
+
+- Add the subscriber details to the database in the subscriptions table, with
+  status equal to pending_confirmation;
+- Generate a (unique) `subscription_token`;
+- Store `subscription_token` in our database against the subscriber id in a
+  subscription_tokens table;
+- Send an email to the new subscriber containing a link structured as
+  `https://<api-domain>/subscriptions/confirm?token=<subscription_token>`;
+- Rreturn a `200 OK`.
+
+**Once they click on the link, a browser tab will open up and a `GET` request will
+be fired to our `GET /subscriptions/confirm` endpoint. The request handler
+will:**
+
+- Retrieve `subscription_token` from the query parameters;
+- Retrieve the subscriber id associated with `subscription_token` from the
+  `subscription_tokens` table;
+- Update the subscriber status from `pending_confirmation` to active in the
+  subscriptions table;
+- Return a `200 OK`.
+
+#### Zero Downtime: Rolling Update Deployments
+
+> This deployment strategy is called rolling update: we run the old and the new
+> version of the application side by side, serving live traffic with both.
+> Throughout the process we always have three or more healthy backends: users
+> should not experience any kind of service degradation (assuming version B is not
+> buggy).
+
+<img src="./assets/rolling-1.png" width='32%'>
+<img src="./assets/rolling-2.png" width='32%'>
+<img src="./assets/rolling-3.png" width='32%'>
+
+**State Is Kept Outside The Application**
+
+Load balancing relies on a strong assumption: no matter which backend is used to
+serve an incoming request, the outcome will be the same.
+
+This is something we discussed already in Chapter 3: to ensure high availability
+in a fault-prone environ- ment, cloud-native applications are stateless - they
+delegate all persistence concerns to external systems (i.e. databases).
+
+That’s why load balancing works: all backends are talking to the same database
+to query and manipulate the same state.
+
+Think of a database as a single gigantic global variable. Continuously accessed
+and mutated by all replicas of our application.
+
+**Transactions In Sqlx**
+
+> Relational databases (and a few others) provide a mechanism to mitigate this
+> issue: **transactions.**
+
+```rust
+//! src/routes/subscriptions.rs
+use sqlx::{Postgres, Transaction, Executor};
+// [...]
+```
+
+`Transaction` exposes two dedicated methods: `Transaction::commit`, to persist
+changes, and `Transaction::rollback`, to abort the whole operation.
+
 ## Chapter 8: Error Handling
+
+<!-- TODO: MONDAY -->
+
+> What does a good error look like? Who are errors for? Should we use a library?
+> Which one?
 
 ## Chapter 9: Naive Newsletter Delivery
 
 ## Chapter 10: Securing Our API
 
+<!-- TODO: TUESDAY -->
+<!-- Revisit code, review this document -->
+<!-- Deploy, go live. Refactor, etc. -->
+
 ## Chapter 11: Fault-tolerant Workflows
 
-```
+<!-- TODO: WEDNESDAY -->
+<!-- EuroRust Workshop -->
 
-```
+<!-- TODO: THURSDAY/FRIDAY -->
+<!-- Wrap up. Review book code. Final notes. -->
+
+<!-- NOTE: w/c 14th Oct. -->
+<!-- Continue with CC Rust Track -->
+<!-- 1hr. 15 per-day. 1hr coding, 15min wrap up -->
