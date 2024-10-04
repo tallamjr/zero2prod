@@ -2,6 +2,22 @@
 
 # Zero to Production Notes
 
+<!-- mtoc-start -->
+
+* [Chapter 1: Getting Started](#chapter-1-getting-started)
+* [Chapter 2: Building An Email Newsletter](#chapter-2-building-an-email-newsletter)
+* [Chapter 3: Sign Up A New Subscriber](#chapter-3-sign-up-a-new-subscriber)
+* [Chapter 4: Telemetry](#chapter-4-telemetry)
+* [Chapter 5: Going Live](#chapter-5-going-live)
+* [Chapter 6: Reject Invalid Subscribers \#1](#chapter-6-reject-invalid-subscribers-1)
+* [Chapter 7: Reject Invalid Subscribers \#2](#chapter-7-reject-invalid-subscribers-2)
+* [Chapter 8: Error Handling](#chapter-8-error-handling)
+* [Chapter 9: Naive Newsletter Delivery](#chapter-9-naive-newsletter-delivery)
+* [Chapter 10: Securing Our API](#chapter-10-securing-our-api)
+* [Chapter 11: Fault-tolerant Workflows](#chapter-11-fault-tolerant-workflows)
+
+<!-- mtoc-end -->
+
 ## Chapter 1: Getting Started
 
 ### Install/update rustup:
