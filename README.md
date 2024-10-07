@@ -630,8 +630,6 @@ pub trait TryInto<T> { type Error;
   fn try_into(self) -> Result<T, Self::Error>; }
 ```
 
-<!-- TODO: TODAY -->
-
 ## Chapter 7: Reject Invalid Subscribers \#2
 
 The Implementation Strategy
@@ -773,12 +771,146 @@ changes, and `Transaction::rollback`, to abort the whole operation.
 
 ## Chapter 8: Error Handling
 
-<!-- TODO: MONDAY -->
-
 > What does a good error look like? Who are errors for? Should we use a library?
 > Which one?
 
+Errors serve two main purposes:
+
+- Control flow (i.e. determine what to do next);
+- Reporting(e.g. investigate, _after the fact_, what went wrong).
+
+We can also distinguish errors based on their location:
+
+- Internal (i.e. a function calling another function within our application);
+- At the edge (i.e. an API request that we failed to fulfil)
+
+See youtube vids below:
+
+- [Error handling Isn’t All About Errors](https://z2p.io/f3t)
+- [Rust Error Handling - Best Practices](https://www.youtube.com/watch?v=j-VQCYP7wyw&ab_channel=JeremyChone)
+- [Error Handling in Rust](https://www.youtube.com/watch?v=jpVzSse7oJ4&ab_channel=Rust)
+
+<img src="./assets/chapter-8-table.png" alt="" width="50%">
+
+```rust
+pub enum Result<T, E> {
+  /// Contains the success value
+  Ok(T),
+  /// Contains the error value
+  Err(E),
+}
+```
+
+The Error trait is, first and foremost, a way to semantically mark our type as
+being an error. It helps a reader of our codebase to immediately spot its
+purpose.
+
+It is also a way for the Rust community to standardise on the minimum
+requirements for a good error:
+
+- It should provide different representations (`Debug` and `Display`),tuned to different audiences;
+- It should be possible to look at the underlying cause of the error,if any (`source`).
+
+_Modelling Errors as Enums_
+
+```rust
+#[derive(Debug)]
+pub enum SubscribeError {
+  ValidationError(String),
+  DatabaseError(sqlx::Error),
+  StoreTokenError(StoreTokenError),
+  SendEmailError(reqwest::Error),
+}
+```
+
+We can then leverage the `?`` operator in our handler by providing a From
+implementation for each of wrapped error types:
+
+```rust
+impl From<reqwest::Error> for SubscribeError {
+  fn from(e: reqwest::Error) -> Self {
+    elf::SendEmailError(e) }
+}
+
+impl From<sqlx::Error> for SubscribeError {
+  fn from(e: sqlx::Error) -> Self {
+    Self::DatabaseError(e) }
+}
+
+impl From<StoreTokenError> for SubscribeError {
+  fn from(e: StoreTokenError) -> Self {
+Self::StoreTokenError(e) }
+}
+
+impl From<String> for SubscribeError {
+  fn from(e: String) -> Self {
+    Self::ValidationError(e)
+  }
+}
+```
+
+```rust
+//! src/routes/subscriptions.rs
+use actix_web::http::StatusCode;
+// [...]
+
+impl ResponseError for SubscribeError {
+  fn status_code(&self) -> StatusCode {
+    match self {
+      SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
+      SubscribeError::DatabaseError(_)
+      | SubscribeError::StoreTokenError(_)
+      | SubscribeError::SendEmailError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    } }
+}
+```
+
+**8.3.3 The Error Type Is Not Enough**: What about our logs?
+
+**8.3.4 Removing The Boilerplate With `thiserror`**
+
+> Wearewrappingdyn
+> std::error::ErrorintoaBoxbecausethesizeoftraitobjectsisnotknownatcompile-time:traitobjects
+> can be used to store different types which will most likely have a different
+> layout in memory. To use Rust’s terminology, they are unsized - they do not
+> implement the Sized marker trait. A Box stores the trait object itself on the
+> heap, while we store the pointer to its heap location in
+> SubscribeError::UnexpectedError - the pointer itself has a known size at
+> compile-time - problem solved, we are Sized again.
+
 ## Chapter 9: Naive Newsletter Delivery
+
+**9.9 Limitations Of The Naive Approach**
+
+Shortcomings:
+
+1. **Security**
+   Our `POST /newsletters` endpoint is unprotected - anyone can fire a request to it
+   and broadcast to our entire audience, unchecked.
+2. **You Only Get One Shot**
+   As soon you hit `POST /newsletters`, your content goes out to your entire
+   mailing list. No chance to edit or review it in draft mode before giving the
+   green light for publishing.
+3. **Performance**
+   We are sending emails out one at a time. We wait for the current one to be
+   dispatched successfully before moving on to the next in line. This is not a
+   massive issue if you have 10 or 20 subscribers, but it becomes noticeable
+   shortly after- wards: latency is going to be horrible for newsletters with a
+   sizeable audience.
+4. **Fault Tolerance**
+   If we fail to dispatch one email we bubble up the error using ? and return a
+   500 Internal Server Error to the caller. The remaining emails are never sent,
+   nor we retry to dispatch the failed one.
+5. **Retry Safety**
+   Many things can go wrong when communicating over the network. What should a
+   consumer of our API do if they experience a timeout or a `500 Internal Server Error`
+   when calling our service? They cannot retry - they risk sending the
+   newsletter issue twice to the entire mailing list.
+
+Number 2. and 3. are annoying, but we could live with them for a while.
+Number 4. and 5. are fairly serious limitations, with a visible impact on our
+audience. Number 1. is simply non-negotiable: we must protect the endpoint
+before releasing our API.
 
 ## Chapter 10: Securing Our API
 
