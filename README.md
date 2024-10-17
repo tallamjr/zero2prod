@@ -808,8 +808,10 @@ purpose.
 It is also a way for the Rust community to standardise on the minimum
 requirements for a good error:
 
-- It should provide different representations (`Debug` and `Display`),tuned to different audiences;
-- It should be possible to look at the underlying cause of the error,if any (`source`).
+- It should provide different representations (`Debug` and `Display`),tuned to
+  different audiences;
+- It should be possible to look at the underlying cause of the error,if any
+  (`source`).
 
 _Modelling Errors as Enums_
 
@@ -914,18 +916,4 @@ before releasing our API.
 
 ## Chapter 10: Securing Our API
 
-<!-- TODO: TUESDAY -->
-<!-- Revisit code, review this document -->
-<!-- Deploy, go live. Refactor, etc. -->
-
 ## Chapter 11: Fault-tolerant Workflows
-
-<!-- TODO: WEDNESDAY -->
-<!-- EuroRust Workshop -->
-
-<!-- TODO: THURSDAY/FRIDAY -->
-<!-- Wrap up. Review book code. Final notes. -->
-
-<!-- NOTE: w/c 14th Oct. -->
-<!-- Continue with CC Rust Track -->
-<!-- 1hr. 15 per-day. 1hr coding, 15min wrap up -->
